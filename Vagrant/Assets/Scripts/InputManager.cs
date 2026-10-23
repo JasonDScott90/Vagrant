@@ -9,6 +9,7 @@ public class InputManager : MonoBehaviour
     private PlayerMotor motor;
     private PlayerLook look;
     private BuildingSystem building;
+    private Bow bow;
 
     void Awake()
     {
@@ -17,33 +18,26 @@ public class InputManager : MonoBehaviour
         motor = GetComponent<PlayerMotor>();
         look = GetComponent<PlayerLook>();
         building = GetComponent<BuildingSystem>();
+        bow = GetComponent<Bow>();
 
-                // when the Jump button is pressed, tell the motor to jump (ignored while a UI screen is open)
-        onFoot.Jump.performed += ctx => { if (!StorageUI.IsOpen) motor.Jump(); };
+        // when the Jump button is pressed, tell the motor to jump
+        onFoot.Jump.performed += ctx => motor.Jump();
 
+        // Equipping the hammer / bow is handled by the ActionBar (keys 1-8 and the mouse wheel).
         if (building == null)
         {
             Debug.LogError("InputManager: no BuildingSystem component found on this object. Add it to the Player.");
         }
         else
         {
-                        // building actions are ignored while the storage screen is open
-            onFoot.Hammer.performed += ctx => { if (!StorageUI.IsOpen) building.ToggleHammer(); };
-            onFoot.Place.performed += ctx => { if (!StorageUI.IsOpen) building.Place(); };
-            onFoot.Rotate.performed += ctx => { if (!StorageUI.IsOpen) building.RotatePiece(); };
-            onFoot.Interact.performed += ctx => { if (!StorageUI.IsOpen) building.Interact(); };
+            onFoot.Place.performed += ctx => building.Place();
+            onFoot.Rotate.performed += ctx => building.RotatePiece();
+            onFoot.Interact.performed += ctx => building.Interact();
         }
     }
 
-        void Update()
+    void Update()
     {
-        // While the storage screen is open the mouse drives the UI: freeze the player.
-        if (StorageUI.IsOpen)
-        {
-            motor.ProcessMove(Vector2.zero, false, false);
-            return;
-        }
-
         // Sprint and Crouch are Button actions.
         motor.ProcessMove(
             onFoot.Movement.ReadValue<Vector2>(),
@@ -52,14 +46,14 @@ public class InputManager : MonoBehaviour
 
         // Holding the Wheel button (right mouse) opens the build menu while the hammer is out.
         if (building != null) building.UpdateWheel(onFoot.Wheel.IsPressed());
+
+        // Hold left mouse to draw the bow, release to shoot.
+        if (bow != null) bow.Tick(onFoot.Place.IsPressed());
     }
 
     private void LateUpdate()
     {
-                Vector2 lookInput = onFoot.Look.ReadValue<Vector2>();
-
-        // While the storage screen is open the mouse drives the UI, not the camera.
-        if (StorageUI.IsOpen) lookInput = Vector2.zero;
+        Vector2 lookInput = onFoot.Look.ReadValue<Vector2>();
 
         // While the build wheel is open, mouse movement picks a slice instead of turning the camera.
         if (building != null && building.WheelOpen)
@@ -85,4 +79,3 @@ public class InputManager : MonoBehaviour
         onFoot.Disable();
     }
 }
-

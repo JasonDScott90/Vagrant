@@ -295,7 +295,7 @@ public class BuildingSystem : MonoBehaviour
 
     // ---------------------------------------------------------------- hammer / wheel state
 
-    void SetHammer(bool equipped)
+    public void SetHammer(bool equipped)
     {
         hammerEquipped = equipped;
         hammer.gameObject.SetActive(equipped);
@@ -537,7 +537,7 @@ public class BuildingSystem : MonoBehaviour
         // hint line (bottom of screen)
         hint = NewText("Hint", canvasGO.transform, Vector2.zero, new Vector2(1600f, 40f), 22);
         hint.rectTransform.anchorMin = hint.rectTransform.anchorMax = new Vector2(0.5f, 0f);
-        hint.rectTransform.anchoredPosition = new Vector2(0f, 50f);
+        hint.rectTransform.anchoredPosition = new Vector2(0f, 125f); // sits above the action bar
 
         // wheel
         float size = wheelOuterRadius * 2f;
@@ -630,4 +630,3 @@ public class BuildingSystem : MonoBehaviour
         return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
     }
 }
-

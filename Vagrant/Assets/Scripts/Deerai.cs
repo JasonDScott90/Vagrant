@@ -1,12 +1,18 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.AI;
 
-/// Simple wildlife AI for a deer: grazes, wanders, gets alert when it sees or hears the player, then flees.
-/// Needs a baked NavMesh (see setup steps). Put this on the deer root object next to a NavMeshAgent.
+/// Wildlife AI for a deer: grazes, wanders, gets alert when it sees or hears the player, flees when scared or hurt,
+/// and dies when its health runs out. Needs a baked NavMesh. Put this on the deer root next to a NavMeshAgent.
 [RequireComponent(typeof(NavMeshAgent))]
 public class DeerAI : MonoBehaviour
 {
     enum State { Graze, Wander, Alert, Flee }
+
+    [Header("Health")]
+    public float maxHealth = 100f;
+    public float corpseLifetime = 60f;    // seconds before the body disappears
+    public bool autoCollider = true;      // adds a hit box if the deer has no collider (so arrows can hit it)
 
     [Header("Speeds")]
     public float walkSpeed = 1.8f;
@@ -27,11 +33,13 @@ public class DeerAI : MonoBehaviour
     public float safeDistance = 40f;      // stops fleeing once it's this far away
     public float minFleeTime = 4f;
 
-    [Header("Optional")]
-    public Animator animator;             // if set, a float parameter called below is updated with the speed
+    [Header("Optional animation")]
+    public Animator animator;             // if set: float "Speed" is updated, trigger "Die" is fired on death (if they exist)
     public string speedParameter = "Speed";
+    public string dieTrigger = "Die";
 
     NavMeshAgent agent;
+    Health health;
     Transform player;
     CharacterController playerController;
 
@@ -40,11 +48,32 @@ public class DeerAI : MonoBehaviour
     float repathTimer;
     float loseTimer;
     bool warned;
+    bool dead;
+    bool hasSpeedParam;
+
+    Vector3 scarePoint;
+    bool usingScarePoint;
 
     void Awake()
     {
         agent = GetComponent<NavMeshAgent>();
         if (animator == null) animator = GetComponentInChildren<Animator>();
+
+        health = GetComponent<Health>();
+        if (health == null)
+        {
+            health = gameObject.AddComponent<Health>();
+            health.SetMax(maxHealth);
+        }
+        health.Damaged += OnDamaged;
+        health.Died += OnDied;
+
+        if (autoCollider && GetComponentInChildren<Collider>() == null)
+        {
+            BoxCollider box = gameObject.AddComponent<BoxCollider>();
+            box.center = new Vector3(0f, 0.95f, 0.1f);
+            box.size = new Vector3(0.6f, 1.5f, 1.7f);
+        }
     }
 
     void Start()
@@ -60,11 +89,15 @@ public class DeerAI : MonoBehaviour
             Debug.LogWarning("DeerAI: no object tagged 'Player' found, the deer will ignore you.");
         }
 
+        hasSpeedParam = AnimatorHasParameter(speedParameter, AnimatorControllerParameterType.Float);
+
         EnterState(State.Graze);
     }
 
     void Update()
     {
+        if (dead) return;
+
         if (!agent.isOnNavMesh)
         {
             if (!warned)
@@ -118,8 +151,7 @@ public class DeerAI : MonoBehaviour
                 break;
         }
 
-        if (animator != null && !string.IsNullOrEmpty(speedParameter))
-            animator.SetFloat(speedParameter, agent.velocity.magnitude);
+        if (hasSpeedParam) animator.SetFloat(speedParameter, agent.velocity.magnitude);
     }
 
     // ---------------------------------------------------------------- states
@@ -128,6 +160,7 @@ public class DeerAI : MonoBehaviour
     {
         state = next;
         loseTimer = 0f;
+        if (next != State.Flee) usingScarePoint = false;
 
         switch (next)
         {
@@ -159,21 +192,18 @@ public class DeerAI : MonoBehaviour
         }
     }
 
-    /// Call this from anywhere (gunshots, damage, etc.) to make the deer run away from a point.
+    /// Make the deer run away from a point (gunshots, damage, etc.).
     public void Scare(Vector3 fromPosition)
     {
-        if (!agent.isOnNavMesh) return;
+        if (dead || !agent.isOnNavMesh) return;
+        EnterState(State.Flee);
         scarePoint = fromPosition;
         usingScarePoint = true;
-        EnterState(State.Flee);
     }
-
-    Vector3 scarePoint;
-    bool usingScarePoint;
 
     void PickFleePoint()
     {
-        Vector3 threat = usingScarePoint || player == null ? scarePoint : player.position;
+        Vector3 threat = (usingScarePoint || player == null) ? scarePoint : player.position;
         Vector3 away = transform.position - threat;
         away.y = 0f;
         if (away.sqrMagnitude < 0.01f) away = transform.forward;
@@ -196,7 +226,8 @@ public class DeerAI : MonoBehaviour
     {
         for (int i = 0; i < 10; i++)
         {
-            Vector3 candidate = around + new Vector3(Random.insideUnitCircle.x, 0f, Random.insideUnitCircle.y) * radius;
+            Vector2 c = Random.insideUnitCircle;
+            Vector3 candidate = around + new Vector3(c.x, 0f, c.y) * radius;
             if (NavMesh.SamplePosition(candidate, out NavMeshHit hit, 6f, NavMesh.AllAreas))
             {
                 result = hit.position;
@@ -204,6 +235,62 @@ public class DeerAI : MonoBehaviour
             }
         }
         result = transform.position;
+        return false;
+    }
+
+    // ---------------------------------------------------------------- damage and death
+
+    void OnDamaged(float amount, Vector3 fromPosition)
+    {
+        if (dead) return;
+        Scare(fromPosition); // getting hit sends it running away from the attacker
+    }
+
+    void OnDied()
+    {
+        if (dead) return;
+        dead = true;
+
+        if (agent.isOnNavMesh) agent.isStopped = true;
+        agent.enabled = false;
+
+        StartCoroutine(DeathRoutine());
+        Destroy(gameObject, corpseLifetime);
+    }
+
+    IEnumerator DeathRoutine()
+    {
+        // If you have a real model with a "Die" trigger in its Animator, use that.
+        if (AnimatorHasParameter(dieTrigger, AnimatorControllerParameterType.Trigger))
+        {
+            animator.SetTrigger(dieTrigger);
+            yield break;
+        }
+
+        // Otherwise: collapse onto its side (works for the placeholder body).
+        Quaternion startRot = transform.rotation;
+        Quaternion endRot = startRot * Quaternion.Euler(0f, 0f, Random.value < 0.5f ? 90f : -90f);
+        Vector3 startPos = transform.position;
+        Vector3 endPos = startPos + Vector3.up * 0.28f; // its body is thick, so lift it so it doesn't sink into the ground
+
+        const float duration = 0.9f;
+        float t = 0f;
+        while (t < 1f)
+        {
+            t += Time.deltaTime / duration;
+            float e = Mathf.Clamp01(t);
+            e = e * e; // starts slow, then drops
+            transform.rotation = Quaternion.Slerp(startRot, endRot, e);
+            transform.position = Vector3.Lerp(startPos, endPos, e);
+            yield return null;
+        }
+    }
+
+    bool AnimatorHasParameter(string parameterName, AnimatorControllerParameterType type)
+    {
+        if (animator == null || animator.runtimeAnimatorController == null || string.IsNullOrEmpty(parameterName)) return false;
+        foreach (AnimatorControllerParameter p in animator.parameters)
+            if (p.name == parameterName && p.type == type) return true;
         return false;
     }
 
@@ -233,7 +320,7 @@ public class DeerAI : MonoBehaviour
         Vector3 eye = transform.position + Vector3.up * eyeHeight;
         if (Physics.Linecast(eye, player.position, out RaycastHit hit, ~0, QueryTriggerInteraction.Ignore))
         {
-            if (hit.transform.root != player.root) return false;
+            if (hit.transform.root != player.root && hit.transform.root != transform.root) return false;
         }
         return true;
     }
