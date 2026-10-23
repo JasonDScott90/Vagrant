@@ -3,24 +3,30 @@ using UnityEngine.UI;
 
 /// Rust-style building with a hammer.
 ///  - Press the Hammer key to equip / holster.
-///  - Hold the Wheel button (right mouse): a radial menu opens, move the mouse toward a piece, release to select it.
-///  - A green/red ghost shows where the piece will go and snaps to existing pieces. Place = left mouse. Rotate = R.
+///  - Hold the Wheel button (right mouse): a radial menu opens, move the mouse toward an entry, release to select it.
+///  - Pieces: a green/red ghost shows where it will go and snaps to existing pieces. Place = left mouse. Rotate = R.
+///  - Upgrade tool: aim at a piece, left mouse upgrades it to the chosen tier (R changes the tier).
+///  - Demolish tool: aim at a piece, left mouse removes it (and anything that was only held up by it).
+///  - Interact (E) opens/closes doors.
 /// Add this to the Player object (next to PlayerMotor / PlayerLook / InputManager).
 public class BuildingSystem : MonoBehaviour
 {
-    [Header("References (auto-found if empty)")]
+    [Header("References (auto-found / auto-generated if empty)")]
     public Camera cam;
     public Material pieceMaterial;
+    [Tooltip("Optional: 5 materials for Twig, Wood, Stone, Metal, Armored. Leave empty to use generated colors.")]
+    public Material[] tierMaterials;
 
     [Header("Placement")]
     public float buildRange = 7f;
-    public float snapRange = 2.8f;             // how close your aim must be to a snap point
-    public float foundationRaise = 0.25f;      // how far a free-placed foundation sticks out of the ground
-    public float maxGroundVariation = 1.2f;    // foundations can't be placed on ground steeper than this across the 3m
+    public float snapRange = 2.8f;
+    public float foundationRaise = 0.25f;
+    public float maxGroundVariation = 1.2f;
+    public float interactRange = 3.5f;
 
     [Header("Wheel")]
-    public float wheelRadius = 240f;
-    public float wheelInnerRadius = 70f;
+    public float wheelOuterRadius = 290f;
+    public float wheelHoleRadius = 85f;
     public float wheelDeadzone = 40f;
     public float wheelSensitivity = 1f;
 
@@ -30,16 +36,24 @@ public class BuildingSystem : MonoBehaviour
     // state
     bool hammerEquipped;
     bool wheelOpen;
-    PieceType selected = PieceType.Foundation;
+    int selectedIndex;               // 0..PieceCount-1 = pieces, then Upgrade, then Demolish
     int rotationStep;
+    int upgradeTier = 1;             // tier the Upgrade tool applies (1 = Wood ... 4 = Armored)
+
+    bool ToolMode => selectedIndex >= PieceDefs.PieceCount;
+    bool IsUpgradeTool => selectedIndex == PieceDefs.PieceCount;
+    bool IsDemolishTool => selectedIndex == PieceDefs.PieceCount + 1;
+    PieceType SelectedPiece => (PieceType)selectedIndex;
 
     // ghost
     GameObject ghost;
     PieceType ghostType;
     Material ghostMat;
+    Material highlightMat;
     bool ghostValid;
     Vector3 targetPos;
     Quaternion targetRot;
+    BuildPiece highlighted;
 
     // hammer visual
     Transform hammer;
@@ -73,17 +87,50 @@ public class BuildingSystem : MonoBehaviour
             // Borrow the project's default material (URP Lit) from a temporary cube.
             GameObject tmp = GameObject.CreatePrimitive(PrimitiveType.Cube);
             pieceMaterial = new Material(tmp.GetComponent<Renderer>().sharedMaterial);
-            pieceMaterial.color = new Color(0.55f, 0.42f, 0.30f);
             Destroy(tmp);
         }
 
-        Shader ghostShader = Shader.Find("Sprites/Default");
-        ghostMat = ghostShader != null ? new Material(ghostShader) : new Material(pieceMaterial);
+        BuildTierMaterials();
+
+        Shader overlay = Shader.Find("Sprites/Default");
+        ghostMat = overlay != null ? new Material(overlay) : new Material(pieceMaterial);
+        highlightMat = overlay != null ? new Material(overlay) : new Material(pieceMaterial);
         ghostMat.color = validColor;
 
         BuildHammer();
         BuildUI();
         SetHammer(false);
+    }
+
+    void BuildTierMaterials()
+    {
+        int n = PieceDefs.TierNames.Length;
+        if (tierMaterials != null && tierMaterials.Length == n)
+        {
+            bool ok = true;
+            foreach (Material m in tierMaterials) if (m == null) ok = false;
+            if (ok) return;
+        }
+
+        Color[] colors =
+        {
+            new Color(0.62f, 0.52f, 0.33f),  // Twig
+            new Color(0.50f, 0.32f, 0.16f),  // Wood
+            new Color(0.62f, 0.62f, 0.60f),  // Stone
+            new Color(0.42f, 0.47f, 0.52f),  // Metal
+            new Color(0.16f, 0.18f, 0.21f),  // Armored
+        };
+
+        tierMaterials = new Material[n];
+        for (int i = 0; i < n; i++)
+        {
+            Material m = new Material(pieceMaterial);
+            m.color = colors[i];
+            bool shiny = i >= 3;
+            if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", shiny ? 0.85f : 0f);
+            if (m.HasProperty("_Smoothness")) m.SetFloat("_Smoothness", shiny ? 0.6f : 0.12f);
+            tierMaterials[i] = m;
+        }
     }
 
     // ---------------------------------------------------------------- input entry points (called by InputManager)
@@ -93,7 +140,11 @@ public class BuildingSystem : MonoBehaviour
     public void RotatePiece()
     {
         if (!hammerEquipped || wheelOpen) return;
-        rotationStep = (rotationStep + 1) % 4;
+
+        if (IsUpgradeTool)
+            upgradeTier = upgradeTier % (PieceDefs.TierNames.Length - 1) + 1; // cycles 1..4
+        else if (!ToolMode)
+            rotationStep = (rotationStep + 1) % 4;
     }
 
     public void UpdateWheel(bool held)
@@ -106,7 +157,7 @@ public class BuildingSystem : MonoBehaviour
     public void FeedWheelInput(Vector2 delta)
     {
         if (!wheelOpen) return;
-        wheelCursor = Vector2.ClampMagnitude(wheelCursor + delta * wheelSensitivity, wheelRadius - 20f);
+        wheelCursor = Vector2.ClampMagnitude(wheelCursor + delta * wheelSensitivity, wheelOuterRadius - 20f);
 
         int n = PieceDefs.Names.Length;
         if (wheelCursor.magnitude >= wheelDeadzone)
@@ -118,14 +169,49 @@ public class BuildingSystem : MonoBehaviour
         UpdateWheelVisuals();
     }
 
+    /// Left mouse: place a piece, upgrade the aimed piece, or demolish the aimed piece, depending on the selected entry.
     public void Place()
     {
-        if (!hammerEquipped || wheelOpen || ghost == null || !ghost.activeSelf || !ghostValid) return;
+        if (!hammerEquipped || wheelOpen) return;
 
-        GameObject go = PieceFactory.Build(ghostType, pieceMaterial, true);
+        if (IsDemolishTool)
+        {
+            BuildPiece p = AimedPiece();
+            if (p == null) return;
+            if (highlighted == p) highlighted = null;
+            BuildPiece.Demolish(p);
+            swingTimer = swingDuration;
+            return;
+        }
+
+        if (IsUpgradeTool)
+        {
+            BuildPiece p = AimedPiece();
+            if (p == null || p.tier >= upgradeTier) return;
+            p.SetTier(upgradeTier, tierMaterials[upgradeTier]);
+            swingTimer = swingDuration;
+            return;
+        }
+
+        if (ghost == null || !ghost.activeSelf || !ghostValid) return;
+
+        int startTier = ghostType == PieceType.Door ? 1 : 0; // doors start as wood, everything else as twig
+        GameObject go = PieceFactory.Build(ghostType, tierMaterials[startTier], true);
         go.transform.SetPositionAndRotation(targetPos, targetRot);
-        go.AddComponent<BuildPiece>().type = ghostType;
+        go.AddComponent<BuildPiece>().Init(ghostType, startTier, tierMaterials[startTier]);
+        if (ghostType == PieceType.Door) go.AddComponent<DoorController>();
         swingTimer = swingDuration;
+    }
+
+    /// E: open / close the door you're looking at.
+    public void Interact()
+    {
+        Ray ray = new Ray(cam.transform.position, cam.transform.forward);
+        if (Physics.Raycast(ray, out RaycastHit hit, interactRange, ~(1 << 2), QueryTriggerInteraction.Ignore))
+        {
+            DoorController door = hit.collider.GetComponentInParent<DoorController>();
+            if (door != null) door.Toggle(transform.position);
+        }
     }
 
     /// Called every frame by InputManager after the camera has been updated.
@@ -135,15 +221,25 @@ public class BuildingSystem : MonoBehaviour
 
         if (!hammerEquipped || wheelOpen)
         {
-            if (ghost != null) ghost.SetActive(false);
+            HideGhost();
+            SetHighlighted(null);
             return;
         }
 
-        hint.text = "[1] Holster    [LMB] Place    [Hold RMB] Build menu    [R] Rotate        Selected: " + PieceDefs.Names[(int)selected];
+        if (ToolMode)
+        {
+            HideGhost();
+            RefreshTool();
+            return;
+        }
+
+        SetHighlighted(null);
+        hint.text = "[1] Holster    [LMB] Place    [Hold RMB] Menu    [R] Rotate    [E] Doors        Selected: "
+                    + PieceDefs.Names[selectedIndex];
 
         if (!TryGetTarget(out targetPos, out targetRot, out ghostValid))
         {
-            if (ghost != null) ghost.SetActive(false);
+            HideGhost();
             ghostValid = false;
             return;
         }
@@ -152,6 +248,49 @@ public class BuildingSystem : MonoBehaviour
         ghost.SetActive(true);
         ghost.transform.SetPositionAndRotation(targetPos, targetRot);
         ghostMat.color = ghostValid ? validColor : invalidColor;
+    }
+
+    // ---------------------------------------------------------------- upgrade / demolish tools
+
+    void RefreshTool()
+    {
+        BuildPiece aimed = AimedPiece();
+        SetHighlighted(aimed);
+        string looking = aimed != null ? "    Looking at: " + aimed.Label : "";
+
+        if (IsDemolishTool)
+        {
+            highlightMat.color = new Color(1f, 0.2f, 0.2f, 0.55f);
+            hint.text = "[1] Holster    [LMB] Demolish    [Hold RMB] Menu" + looking;
+        }
+        else
+        {
+            bool can = aimed != null && aimed.tier < upgradeTier;
+            highlightMat.color = can ? new Color(0.3f, 1f, 0.4f, 0.55f) : new Color(0.7f, 0.7f, 0.7f, 0.45f);
+            hint.text = "[1] Holster    [LMB] Upgrade to " + PieceDefs.TierNames[upgradeTier]
+                        + "    [R] Change tier    [Hold RMB] Menu" + looking;
+        }
+    }
+
+    BuildPiece AimedPiece()
+    {
+        Ray ray = new Ray(cam.transform.position, cam.transform.forward);
+        if (Physics.Raycast(ray, out RaycastHit hit, buildRange, ~(1 << 2), QueryTriggerInteraction.Ignore))
+            return hit.collider.GetComponentInParent<BuildPiece>();
+        return null;
+    }
+
+    void SetHighlighted(BuildPiece piece)
+    {
+        if (highlighted == piece) return;
+        if (highlighted != null) highlighted.SetHighlight(null);
+        highlighted = piece;
+        if (highlighted != null) highlighted.SetHighlight(highlightMat);
+    }
+
+    void HideGhost()
+    {
+        if (ghost != null) ghost.SetActive(false);
     }
 
     // ---------------------------------------------------------------- hammer / wheel state
@@ -164,7 +303,8 @@ public class BuildingSystem : MonoBehaviour
         if (!equipped)
         {
             if (wheelOpen) CloseWheel(false);
-            if (ghost != null) ghost.SetActive(false);
+            HideGhost();
+            SetHighlighted(null);
         }
     }
 
@@ -181,7 +321,7 @@ public class BuildingSystem : MonoBehaviour
     {
         if (apply && hovered >= 0)
         {
-            selected = (PieceType)hovered;
+            selectedIndex = hovered;
             rotationStep = 0;
         }
         wheelOpen = false;
@@ -193,11 +333,11 @@ public class BuildingSystem : MonoBehaviour
         for (int i = 0; i < sliceImages.Length; i++)
         {
             Color c = baseColor;
-            if (i == (int)selected) c = selectedColor;
+            if (i == selectedIndex) c = selectedColor;
             if (i == hovered) c = hoverColor;
             sliceImages[i].color = c;
         }
-        centerText.text = hovered >= 0 ? PieceDefs.Names[hovered] : PieceDefs.Names[(int)selected];
+        centerText.text = hovered >= 0 ? PieceDefs.Names[hovered] : PieceDefs.Names[selectedIndex];
         dot.rectTransform.anchoredPosition = wheelCursor;
     }
 
@@ -213,9 +353,9 @@ public class BuildingSystem : MonoBehaviour
         if (!Physics.Raycast(ray, out RaycastHit hit, buildRange, ~(1 << 2), QueryTriggerInteraction.Ignore))
             return false;
 
-        PieceType type = selected;
+        PieceType type = SelectedPiece;
         SocketDef[] needs = PieceDefs.Needs(type);
-        bool rotatable = PieceDefs.CanRotateWhenSnapped(type);
+        float extraYaw = PieceDefs.RotationOffset(type, rotationStep);
 
         float best = float.MaxValue;
         bool found = false;
@@ -228,7 +368,7 @@ public class BuildingSystem : MonoBehaviour
                 {
                     if (needs[i].kind != s.kind) continue;
 
-                    float yaw = s.yaw + 180f - needs[i].yaw + (rotatable ? 90f * rotationStep : 0f);
+                    float yaw = s.yaw + 180f - needs[i].yaw + extraYaw;
                     Quaternion q = Quaternion.Euler(0f, yaw, 0f);
                     Vector3 p = s.pos - q * needs[i].pos;
 
@@ -323,11 +463,12 @@ public class BuildingSystem : MonoBehaviour
 
     void EnsureGhost()
     {
-        if (ghost != null && ghostType == selected) return;
+        PieceType wanted = SelectedPiece;
+        if (ghost != null && ghostType == wanted) return;
         if (ghost != null) Destroy(ghost);
-        ghost = PieceFactory.Build(selected, ghostMat, false);
+        ghost = PieceFactory.Build(wanted, ghostMat, false);
         SetLayerRecursive(ghost, 2); // Ignore Raycast, so the ghost never blocks your aim
-        ghostType = selected;
+        ghostType = wanted;
     }
 
     static void SetLayerRecursive(GameObject go, int layer)
@@ -394,21 +535,22 @@ public class BuildingSystem : MonoBehaviour
         scaler.matchWidthOrHeight = 0.5f;
 
         // hint line (bottom of screen)
-        hint = NewText("Hint", canvasGO.transform, Vector2.zero, new Vector2(1400f, 40f), 22);
+        hint = NewText("Hint", canvasGO.transform, Vector2.zero, new Vector2(1600f, 40f), 22);
         hint.rectTransform.anchorMin = hint.rectTransform.anchorMax = new Vector2(0.5f, 0f);
         hint.rectTransform.anchoredPosition = new Vector2(0f, 50f);
 
         // wheel
-        wheelRoot = NewRect("Wheel", canvasGO.transform, Vector2.zero, new Vector2(wheelRadius * 2f, wheelRadius * 2f)).gameObject;
-        NewImage("Background", wheelRoot.transform, new Vector2(wheelRadius * 2f, wheelRadius * 2f), new Color(0f, 0f, 0f, 0.35f));
+        float size = wheelOuterRadius * 2f;
+        wheelRoot = NewRect("Wheel", canvasGO.transform, Vector2.zero, new Vector2(size, size)).gameObject;
+        NewImage("Background", wheelRoot.transform, new Vector2(size, size), new Color(0f, 0f, 0f, 0.35f));
 
         int n = PieceDefs.Names.Length;
         sliceImages = new Image[n];
-        float labelRadius = (wheelRadius + wheelInnerRadius) * 0.5f;
+        float labelRadius = (wheelOuterRadius + wheelHoleRadius) * 0.5f;
 
         for (int i = 0; i < n; i++)
         {
-            Image img = NewImage("Slice" + i, wheelRoot.transform, new Vector2(wheelRadius * 2f, wheelRadius * 2f), baseColor);
+            Image img = NewImage("Slice" + i, wheelRoot.transform, new Vector2(size, size), baseColor);
             img.type = Image.Type.Filled;
             img.fillMethod = Image.FillMethod.Radial360;
             img.fillOrigin = (int)Image.Origin360.Top;
@@ -421,11 +563,11 @@ public class BuildingSystem : MonoBehaviour
 
             float a = i * 360f / n * Mathf.Deg2Rad;
             Vector2 p = new Vector2(Mathf.Sin(a), Mathf.Cos(a)) * labelRadius;
-            NewText("Label" + i, wheelRoot.transform, p, new Vector2(170f, 40f), 26).text = PieceDefs.Names[i];
+            NewText("Label" + i, wheelRoot.transform, p, new Vector2(150f, 40f), 22).text = PieceDefs.Names[i];
         }
 
-        NewImage("Hole", wheelRoot.transform, new Vector2(wheelInnerRadius * 2f, wheelInnerRadius * 2f), new Color(0.04f, 0.04f, 0.04f, 0.92f));
-        centerText = NewText("CenterText", wheelRoot.transform, Vector2.zero, new Vector2(wheelInnerRadius * 2f, 40f), 24);
+        NewImage("Hole", wheelRoot.transform, new Vector2(wheelHoleRadius * 2f, wheelHoleRadius * 2f), new Color(0.04f, 0.04f, 0.04f, 0.92f));
+        centerText = NewText("CenterText", wheelRoot.transform, Vector2.zero, new Vector2(wheelHoleRadius * 2f, 40f), 22);
         dot = NewImage("Cursor", wheelRoot.transform, new Vector2(14f, 14f), Color.white);
 
         wheelRoot.SetActive(false);
@@ -488,3 +630,4 @@ public class BuildingSystem : MonoBehaviour
         return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f);
     }
 }
+

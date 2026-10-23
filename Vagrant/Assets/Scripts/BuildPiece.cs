@@ -1,8 +1,8 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public enum PieceType { Foundation, Floor, Wall, Doorway, Window, Stairs }
-public enum SocketKind { FoundationEdge, FloorEdge, WallBase, WallTop, CellCenter }
+public enum PieceType { Foundation, Floor, Wall, Doorway, Window, Stairs, Door }
+public enum SocketKind { FoundationEdge, FloorEdge, WallBase, WallTop, CellCenter, DoorFrame }
 
 /// A connection point in a piece's local space. yaw = the direction the socket "faces" (0 = +Z).
 public struct SocketDef
@@ -29,8 +29,16 @@ public static class PieceDefs
     public const float Thickness = 0.2f;
     public const float FoundationDepth = 2f;
 
-    // Order must match the PieceType enum (it is also the order of the wheel slices, clockwise from the top).
-    public static readonly string[] Names = { "Foundation", "Floor", "Wall", "Doorway", "Window", "Stairs" };
+    /// Number of real building pieces (the PieceType values). The wheel adds the two tools after them.
+    public const int PieceCount = 7;
+
+    // Wheel order, clockwise from the top. First PieceCount entries match the PieceType enum.
+    public static readonly string[] Names =
+    {
+        "Foundation", "Floor", "Wall", "Doorway", "Window", "Stairs", "Door", "Upgrade", "Demolish"
+    };
+
+    public static readonly string[] TierNames = { "Twig", "Wood", "Stone", "Metal", "Armored" };
 
     static SocketDef[] Edges(SocketKind kind)
     {
@@ -61,6 +69,8 @@ public static class PieceDefs
         new SocketDef(SocketKind.WallTop, new Vector3(0f, WallHeight, 0f), 0f),
         new SocketDef(SocketKind.WallTop, new Vector3(0f, WallHeight, 0f), 180f),
     };
+    static readonly SocketDef[] doorwayProvides =
+        Join(wallProvides, new[] { new SocketDef(SocketKind.DoorFrame, Vector3.zero, 0f) });
 
     // What each piece NEEDS to snap onto (the point on the piece that gets lined up with a socket)
     static readonly SocketDef[] foundationNeeds = { new SocketDef(SocketKind.FoundationEdge, new Vector3(0f, 0f, -Half), 180f) };
@@ -71,6 +81,7 @@ public static class PieceDefs
     };
     static readonly SocketDef[] wallNeeds = { new SocketDef(SocketKind.WallBase, Vector3.zero, 180f) };
     static readonly SocketDef[] stairsNeeds = { new SocketDef(SocketKind.CellCenter, Vector3.zero, 180f) };
+    static readonly SocketDef[] doorNeeds = { new SocketDef(SocketKind.DoorFrame, Vector3.zero, 180f) };
 
     public static SocketDef[] Provides(PieceType t)
     {
@@ -78,8 +89,8 @@ public static class PieceDefs
         {
             case PieceType.Foundation: return foundationProvides;
             case PieceType.Floor: return floorProvides;
+            case PieceType.Doorway: return doorwayProvides;
             case PieceType.Wall:
-            case PieceType.Doorway:
             case PieceType.Window: return wallProvides;
             default: return none;
         }
@@ -94,6 +105,7 @@ public static class PieceDefs
             case PieceType.Wall:
             case PieceType.Doorway:
             case PieceType.Window: return wallNeeds;
+            case PieceType.Door: return doorNeeds;
             default: return stairsNeeds;
         }
     }
@@ -106,11 +118,18 @@ public static class PieceDefs
             case PieceType.Foundation: return 0;
             case PieceType.Floor: return 1;
             case PieceType.Stairs: return 3;
+            case PieceType.Door: return 4;
             default: return 2; // wall, doorway, window
         }
     }
 
-    public static bool CanRotateWhenSnapped(PieceType t) { return t == PieceType.Stairs; }
+    /// Extra turn the player can add with R when a piece is snapped (stairs: 90° steps, door: flips the hinge side).
+    public static float RotationOffset(PieceType t, int step)
+    {
+        if (t == PieceType.Stairs) return 90f * step;
+        if (t == PieceType.Door) return 180f * (step % 2);
+        return 0f;
+    }
 }
 
 /// Put on every placed piece. Keeps a global list so the ghost can look for sockets to snap to.
@@ -119,9 +138,48 @@ public class BuildPiece : MonoBehaviour
     public static readonly List<BuildPiece> All = new List<BuildPiece>();
 
     public PieceType type;
+    public int tier;
+
+    Material baseMaterial;
+    bool highlighted;
 
     void OnEnable() { All.Add(this); }
     void OnDisable() { All.Remove(this); }
+
+    public string Label { get { return PieceDefs.Names[(int)type] + " (" + PieceDefs.TierNames[tier] + ")"; } }
+
+    public void Init(PieceType t, int tierIndex, Material mat)
+    {
+        type = t;
+        SetTier(tierIndex, mat);
+    }
+
+    public void SetTier(int t, Material mat)
+    {
+        tier = t;
+        baseMaterial = mat;
+        if (!highlighted) Apply(mat);
+    }
+
+    /// Pass a material to tint the whole piece (used for the aim highlight), or null to restore it.
+    public void SetHighlight(Material m)
+    {
+        if (m == null)
+        {
+            if (highlighted) { highlighted = false; Apply(baseMaterial); }
+        }
+        else
+        {
+            highlighted = true;
+            Apply(m);
+        }
+    }
+
+    void Apply(Material m)
+    {
+        if (m == null) return;
+        foreach (Renderer r in GetComponentsInChildren<Renderer>()) r.sharedMaterial = m;
+    }
 
     public IEnumerable<WorldSocket> GetWorldSockets()
     {
@@ -148,6 +206,100 @@ public class BuildPiece : MonoBehaviour
         }
         return false;
     }
+
+    // ------------------------------------------------------------ demolishing
+
+    /// Removes a piece, then removes anything that was only held up by it (walls on a demolished foundation, etc).
+    public static void Demolish(BuildPiece piece)
+    {
+        Kill(piece);
+        PruneUnsupported();
+    }
+
+    static void Kill(BuildPiece p)
+    {
+        p.gameObject.SetActive(false); // removes it from All immediately
+        Destroy(p.gameObject);
+    }
+
+    static void PruneUnsupported()
+    {
+        // Foundations rest on the ground. Everything else must be connected to one through its sockets.
+        var supported = new HashSet<BuildPiece>();
+        foreach (BuildPiece p in All)
+            if (p.type == PieceType.Foundation) supported.Add(p);
+
+        bool changed = true;
+        while (changed)
+        {
+            changed = false;
+            foreach (BuildPiece p in All)
+            {
+                if (supported.Contains(p)) continue;
+                if (HasSupport(p, supported)) { supported.Add(p); changed = true; }
+            }
+        }
+
+        var doomed = new List<BuildPiece>();
+        foreach (BuildPiece p in All)
+            if (!supported.Contains(p)) doomed.Add(p);
+        foreach (BuildPiece p in doomed) Kill(p);
+    }
+
+    static bool HasSupport(BuildPiece p, HashSet<BuildPiece> supported)
+    {
+        SocketDef[] needs = PieceDefs.Needs(p.type);
+        foreach (BuildPiece other in supported)
+        {
+            if (other == p) continue;
+            foreach (WorldSocket s in other.GetWorldSockets())
+            {
+                for (int i = 0; i < needs.Length; i++)
+                {
+                    if (needs[i].kind != s.kind) continue;
+                    if (Vector3.Distance(s.pos, p.transform.TransformPoint(needs[i].pos)) < 0.2f) return true;
+                }
+            }
+        }
+        return false;
+    }
+}
+
+/// Swings the door open/closed around its hinge. Interact (E) toggles it.
+public class DoorController : MonoBehaviour
+{
+    public float openAngle = 100f;
+    public float speed = 240f;
+
+    Transform hinge;
+    bool isOpen;
+    float currentAngle;
+    float targetAngle;
+
+    void Awake() { hinge = transform.Find("Hinge"); }
+
+    public void Toggle(Vector3 playerPosition)
+    {
+        if (!isOpen)
+        {
+            // swing away from whoever is opening it
+            float side = Vector3.Dot(playerPosition - transform.position, transform.forward);
+            targetAngle = side >= 0f ? openAngle : -openAngle;
+            isOpen = true;
+        }
+        else
+        {
+            targetAngle = 0f;
+            isOpen = false;
+        }
+    }
+
+    void Update()
+    {
+        if (hinge == null) return;
+        currentAngle = Mathf.MoveTowardsAngle(currentAngle, targetAngle, speed * Time.deltaTime);
+        hinge.localRotation = Quaternion.Euler(0f, currentAngle, 0f);
+    }
 }
 
 /// Builds each piece out of simple boxes. Swap this for your own prefabs/models whenever you have them.
@@ -157,10 +309,10 @@ public static class PieceFactory
     {
         var root = new GameObject(type.ToString());
 
-        void Box(Vector3 center, Vector3 size)
+        void Box(Vector3 center, Vector3 size, Transform parent = null)
         {
             GameObject b = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            b.transform.SetParent(root.transform, false);
+            b.transform.SetParent(parent != null ? parent : root.transform, false);
             b.transform.localPosition = center;
             b.transform.localScale = size;
             if (mat != null) b.GetComponent<Renderer>().sharedMaterial = mat;
@@ -218,8 +370,19 @@ public static class PieceFactory
                     }
                     break;
                 }
+
+            case PieceType.Door:
+                {
+                    // fits the doorway opening (1.3 x 2.3), hinged on its left edge
+                    var hinge = new GameObject("Hinge").transform;
+                    hinge.SetParent(root.transform, false);
+                    hinge.localPosition = new Vector3(-0.65f, 0f, 0f);
+                    Box(new Vector3(0.65f, 1.15f, 0f), new Vector3(1.26f, 2.26f, 0.08f), hinge);
+                    break;
+                }
         }
 
         return root;
     }
 }
+

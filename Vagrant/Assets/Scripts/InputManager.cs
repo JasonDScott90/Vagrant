@@ -18,8 +18,8 @@ public class InputManager : MonoBehaviour
         look = GetComponent<PlayerLook>();
         building = GetComponent<BuildingSystem>();
 
-        // when the Jump button is pressed, tell the motor to jump
-        onFoot.Jump.performed += ctx => motor.Jump();
+                // when the Jump button is pressed, tell the motor to jump (ignored while a UI screen is open)
+        onFoot.Jump.performed += ctx => { if (!StorageUI.IsOpen) motor.Jump(); };
 
         if (building == null)
         {
@@ -27,14 +27,23 @@ public class InputManager : MonoBehaviour
         }
         else
         {
-            onFoot.Hammer.performed += ctx => building.ToggleHammer();
-            onFoot.Place.performed += ctx => building.Place();
-            onFoot.Rotate.performed += ctx => building.RotatePiece();
+                        // building actions are ignored while the storage screen is open
+            onFoot.Hammer.performed += ctx => { if (!StorageUI.IsOpen) building.ToggleHammer(); };
+            onFoot.Place.performed += ctx => { if (!StorageUI.IsOpen) building.Place(); };
+            onFoot.Rotate.performed += ctx => { if (!StorageUI.IsOpen) building.RotatePiece(); };
+            onFoot.Interact.performed += ctx => { if (!StorageUI.IsOpen) building.Interact(); };
         }
     }
 
-    void Update()
+        void Update()
     {
+        // While the storage screen is open the mouse drives the UI: freeze the player.
+        if (StorageUI.IsOpen)
+        {
+            motor.ProcessMove(Vector2.zero, false, false);
+            return;
+        }
+
         // Sprint and Crouch are Button actions.
         motor.ProcessMove(
             onFoot.Movement.ReadValue<Vector2>(),
@@ -47,7 +56,10 @@ public class InputManager : MonoBehaviour
 
     private void LateUpdate()
     {
-        Vector2 lookInput = onFoot.Look.ReadValue<Vector2>();
+                Vector2 lookInput = onFoot.Look.ReadValue<Vector2>();
+
+        // While the storage screen is open the mouse drives the UI, not the camera.
+        if (StorageUI.IsOpen) lookInput = Vector2.zero;
 
         // While the build wheel is open, mouse movement picks a slice instead of turning the camera.
         if (building != null && building.WheelOpen)
