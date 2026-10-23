@@ -1,5 +1,3 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -11,7 +9,6 @@ public class InputManager : MonoBehaviour
     private PlayerMotor motor;
     private PlayerLook look;
 
-    // Awake is called when the script instance is loaded
     void Awake()
     {
         playerInput = new PlayerInput();
@@ -23,16 +20,19 @@ public class InputManager : MonoBehaviour
         onFoot.Jump.performed += ctx => motor.Jump();
     }
 
-    // Update is called once per frame, which keeps movement smooth
     void Update()
     {
-        //tell the playermotor to move using the value from our movement action.
-        motor.ProcessMove(onFoot.Movement.ReadValue<Vector2>());
+        // Sprint and Crouch are Button actions (see setup notes).
+        motor.ProcessMove(
+            onFoot.Movement.ReadValue<Vector2>(),
+            onFoot.Sprint.IsPressed(),
+            onFoot.Crouch.IsPressed());
     }
 
     private void LateUpdate()
     {
-        look.ProcessLook(onFoot.Look.ReadValue<Vector2>());
+        // FreeLook is a Button action: hold to look around without turning the body.
+        look.ProcessLook(onFoot.Look.ReadValue<Vector2>(), onFoot.FreeLook.IsPressed());
     }
 
     private void OnEnable()
