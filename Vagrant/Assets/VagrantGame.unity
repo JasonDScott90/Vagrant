@@ -341,9 +341,27 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 15134bb1f29be924da87363f1d92677a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerMotor
-  speed: 5
-  gravity: -9.8
-  jumpHeight: 1.5
+  crouchSpeed: 1.7
+  runSpeed: 5.5
+  sprintSpeed: 7.5
+  backwardMultiplier: 0.9
+  strafeMultiplier: 0.95
+  groundAcceleration: 40
+  groundDeceleration: 50
+  airControl: 0.05
+  gravityForce: 30
+  jumpHeightMeters: 0.9
+  fallMultiplier: 1.6
+  maxFallSpeed: 50
+  jumpBufferTime: 0.1
+  coyoteTime: 0.08
+  crouchHeight: 1.2
+  crouchTransitionSpeed: 8
+  cameraTransform: {fileID: 0}
+  slopeSlideSpeed: 6
+  groundMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
 --- !u!114 &223259044
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -371,6 +389,30 @@ MonoBehaviour:
   cam: {fileID: 0}
   xSensitivity: 0.15
   ySensitivity: 0.15
+  maxFreeLookYaw: 120
+  freeLookReturnSpeed: 12
+--- !u!114 &223259050
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 223259038}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2288331af9603a349b78de86e93d88ec, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BuildingSystem
+  cam: {fileID: 0}
+  pieceMaterial: {fileID: 0}
+  buildRange: 7
+  snapRange: 2.8
+  foundationRaise: 0.25
+  maxGroundVariation: 1.2
+  wheelRadius: 240
+  wheelInnerRadius: 70
+  wheelDeadzone: 40
+  wheelSensitivity: 1
 --- !u!1001 &236312689
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -1833,15 +1875,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3215621897454599457, guid: 87dfd5b31202f79448a22717c3eef7e7, type: 3}
       propertyPath: m_LocalPosition.x
-      value: -20.9
+      value: 42.52
       objectReference: {fileID: 0}
     - target: {fileID: 3215621897454599457, guid: 87dfd5b31202f79448a22717c3eef7e7, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -0.78
+      value: -0.26
       objectReference: {fileID: 0}
     - target: {fileID: 3215621897454599457, guid: 87dfd5b31202f79448a22717c3eef7e7, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 68.8
+      value: 70.44
       objectReference: {fileID: 0}
     - target: {fileID: 3215621897454599457, guid: 87dfd5b31202f79448a22717c3eef7e7, type: 3}
       propertyPath: m_LocalRotation.w
@@ -1888,6 +1930,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 5504693633711340519, guid: 87dfd5b31202f79448a22717c3eef7e7, type: 3}
       insertIndex: -1
       addedObject: {fileID: 223259045}
+    - targetCorrespondingSourceObject: {fileID: 5504693633711340519, guid: 87dfd5b31202f79448a22717c3eef7e7, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 223259050}
   m_SourcePrefab: {fileID: 100100000, guid: 87dfd5b31202f79448a22717c3eef7e7, type: 3}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
