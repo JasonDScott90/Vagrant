@@ -1336,6 +1336,7 @@ Transform:
   - {fileID: 1545001255}
   - {fileID: 1558396188}
   - {fileID: 2141782659}
+  - {fileID: 1461693954}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1182260333
@@ -1570,11 +1571,11 @@ Transform:
   m_GameObject: {fileID: 1461693953}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 2, z: 0}
+  m_LocalPosition: {x: 303.2, y: 39.3, z: 88.2}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 0}
+  m_Father: {fileID: 1182260332}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &1461693955
 MonoBehaviour:
@@ -1590,8 +1591,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::NatureAmbience
   windClip: {fileID: 0}
   birdClip: {fileID: 0}
-  windVolume: 0.12
-  birdVolume: 0.5
+  windVolume: 0.058
+  birdVolume: 0.207
 --- !u!1 &1463729237
 GameObject:
   m_ObjectHideFlags: 0
@@ -2882,4 +2883,3 @@ SceneRoots:
   - {fileID: 385013416}
   - {fileID: 1463729241}
   - {fileID: 1732669503}
-  - {fileID: 1461693954}
