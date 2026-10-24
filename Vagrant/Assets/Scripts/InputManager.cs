@@ -10,6 +10,8 @@ public class InputManager : MonoBehaviour
     private PlayerLook look;
     private BuildingSystem building;
     private Bow bow;
+    private Gun gun;
+    private PlayerInventory inventory;
 
     void Awake()
     {
@@ -19,6 +21,8 @@ public class InputManager : MonoBehaviour
         look = GetComponent<PlayerLook>();
         building = GetComponent<BuildingSystem>();
         bow = GetComponent<Bow>();
+        gun = GetComponent<Gun>();
+        inventory = GetComponent<PlayerInventory>();
 
         // when the Jump button is pressed, tell the motor to jump
         onFoot.Jump.performed += ctx => motor.Jump();
@@ -44,16 +48,29 @@ public class InputManager : MonoBehaviour
             onFoot.Sprint.IsPressed(),
             onFoot.Crouch.IsPressed());
 
+        // Tab toggles the inventory screen.
+        Keyboard kb = Keyboard.current;
+        if (kb != null && kb.tabKey.wasPressedThisFrame)
+            InventoryUI.Toggle(inventory != null ? inventory.Container : null);
+
+        // While the inventory screen is up, don't drive the weapons or the build wheel.
+        bool uiOpen = InventoryUI.IsOpen;
+
         // Holding the Wheel button (right mouse) opens the build menu while the hammer is out.
-        if (building != null) building.UpdateWheel(onFoot.Wheel.IsPressed());
+        if (building != null && !uiOpen) building.UpdateWheel(onFoot.Wheel.IsPressed());
 
         // Hold left mouse to draw the bow, release to shoot.
-        if (bow != null) bow.Tick(onFoot.Place.IsPressed());
+        if (!uiOpen)
+        {
+            if (bow != null) bow.Tick(onFoot.Place.IsPressed());
+            if (gun != null) gun.Tick(onFoot.Place.IsPressed(), onFoot.Wheel.IsPressed());
+        }
     }
 
     private void LateUpdate()
     {
         Vector2 lookInput = onFoot.Look.ReadValue<Vector2>();
+        if (InventoryUI.IsOpen) lookInput = Vector2.zero;   // no camera turning while a menu is up
 
         // While the build wheel is open, mouse movement picks a slice instead of turning the camera.
         if (building != null && building.WheelOpen)

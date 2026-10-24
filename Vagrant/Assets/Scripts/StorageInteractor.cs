@@ -32,6 +32,12 @@ public class StorageInteractor : MonoBehaviour
 
     void Update()
     {
+        if (InventoryUI.IsOpen)
+        {
+            SetPrompt(false);
+            return;
+        }
+
         if (StorageUI.IsOpen)
         {
             SetPrompt(false);

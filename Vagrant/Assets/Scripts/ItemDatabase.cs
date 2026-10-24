@@ -32,7 +32,7 @@ public static class ItemDB
         Register(new ItemDef("cloth", "Cloth", 1000, new Color(0.78f, 0.72f, 0.58f)));
         Register(new ItemDef("low_grade_fuel", "Low Grade Fuel", 1000, new Color(0.85f, 0.55f, 0.15f)));
         Register(new ItemDef("sulfur", "Sulfur", 1000, new Color(0.85f, 0.75f, 0.20f)));
-        Register(new ItemDef("charcoal", "Charcoal", 1000, new Color(0.25f, 0.22f, 0.20f)));
+        Register(new ItemDef("charcoal", "Charcoal", 1000, new Color(0.25f, 0.22f, 0.20f)));        Register(new ItemDef("bullet", "Bullet", 1000, new Color(0.82f, 0.65f, 0.25f)));
     }
 
     static void Register(ItemDef def) { byId[def.id] = def; }

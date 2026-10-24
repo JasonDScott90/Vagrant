@@ -21,5 +21,8 @@ public class PlayerInventory : MonoBehaviour
             Container.Add("cloth", 100);
             Container.Add("low_grade_fuel", 50);
         }
+
+        // ammo for the gun: every game starts with 100 bullets
+        Container.Add("bullet", 100);
     }
 }

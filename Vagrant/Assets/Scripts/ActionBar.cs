@@ -2,7 +2,7 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
 
-public enum HotbarItem { None, Hammer, Bow }
+public enum HotbarItem { None, Hammer, Bow, Gun }
 
 /// An 8-slot action bar along the bottom of the screen.
 ///  - Keys 1-8 select a slot. Pressing the key of the selected slot puts the item away.
@@ -14,8 +14,8 @@ public class ActionBar : MonoBehaviour
     [Header("Slots (key 1 = first entry)")]
     public HotbarItem[] slots =
     {
-        HotbarItem.Hammer, HotbarItem.Bow,
-        HotbarItem.None, HotbarItem.None, HotbarItem.None, HotbarItem.None, HotbarItem.None, HotbarItem.None
+        HotbarItem.Hammer, HotbarItem.Bow, HotbarItem.Gun,
+        HotbarItem.None, HotbarItem.None, HotbarItem.None, HotbarItem.None, HotbarItem.None
     };
 
     [Header("Behaviour")]
@@ -28,6 +28,7 @@ public class ActionBar : MonoBehaviour
 
     BuildingSystem building;
     Bow bow;
+    Gun gun;
     int selected = -1;
 
     Image[] backgrounds;
@@ -45,6 +46,7 @@ public class ActionBar : MonoBehaviour
     {
         building = GetComponent<BuildingSystem>();
         bow = GetComponent<Bow>();
+        gun = GetComponent<Gun>();
         font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         BuildUI();
     }
@@ -57,6 +59,7 @@ public class ActionBar : MonoBehaviour
 
     void Update()
     {
+        if (InventoryUI.IsOpen) return; // don't switch items while a menu is open
         if (building != null && building.WheelOpen) return; // don't switch items while the build wheel is open
 
         Keyboard kb = Keyboard.current;
@@ -100,6 +103,7 @@ public class ActionBar : MonoBehaviour
 
         if (building != null) building.SetHammer(item == HotbarItem.Hammer);
         if (bow != null) bow.SetEquipped(item == HotbarItem.Bow);
+        if (gun != null) gun.SetEquipped(item == HotbarItem.Gun);
 
         RefreshVisuals();
     }
@@ -183,6 +187,14 @@ public class ActionBar : MonoBehaviour
             Rect(icon, new Vector2(-4f, -17f), new Vector2(5f, 24f), 22f, new Color(0.6f, 0.42f, 0.25f)); // lower limb
             Rect(icon, new Vector2(2f, 0f), new Vector2(2f, 52f), 0f, new Color(0.9f, 0.9f, 0.85f));     // string
             Rect(icon, new Vector2(8f, 0f), new Vector2(36f, 3f), 0f, new Color(0.75f, 0.65f, 0.5f));    // arrow
+        }
+        else if (item == HotbarItem.Gun)
+        {
+            Rect(icon, new Vector2(-18f, -2f), new Vector2(12f, 9f), 0f, new Color(0.32f, 0.22f, 0.13f));   // stock
+            Rect(icon, new Vector2(-2f, 0f), new Vector2(22f, 11f), 0f, new Color(0.16f, 0.17f, 0.19f));   // body
+            Rect(icon, new Vector2(13f, 3f), new Vector2(30f, 5f), 0f, new Color(0.07f, 0.07f, 0.08f));    // barrel
+            Rect(icon, new Vector2(-8f, -13f), new Vector2(7f, 16f), 15f, new Color(0.07f, 0.07f, 0.08f)); // grip
+            Rect(icon, new Vector2(2f, -12f), new Vector2(7f, 13f), -10f, new Color(0.30f, 0.30f, 0.33f)); // magazine
         }
     }
 
