@@ -23,6 +23,13 @@ public class Health : MonoBehaviour
         Current = value;
     }
 
+    /// Restore health without exceeding the maximum.
+    public void Heal(float amount)
+    {
+        if (IsDead) return;
+        Current = Mathf.Min(maxHealth, Current + amount);
+    }
+
     public void TakeDamage(float amount, Vector3 fromPosition)
     {
         if (IsDead) return;
