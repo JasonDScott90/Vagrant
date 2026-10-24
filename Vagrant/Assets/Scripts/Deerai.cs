@@ -14,6 +14,11 @@ public class DeerAI : MonoBehaviour
     public float corpseLifetime = 60f;    // seconds before the body disappears
     public bool autoCollider = true;      // adds a hit box if the deer has no collider (so arrows can hit it)
 
+    [Header("Meat drop")]
+    public string meatItemId = "raw_meat"; // item spawned on the ground when it dies
+    public int meatPerChunk = 3;           // meat per pickup lying on the ground
+    public int meatChunks = 2;             // pickups scattered around the corpse
+
     [Header("Speeds")]
     public float walkSpeed = 1.8f;
     public float runSpeed = 8f;
@@ -254,11 +259,25 @@ public class DeerAI : MonoBehaviour
         if (agent.isOnNavMesh) agent.isStopped = true;
         agent.enabled = false;
 
+        DropMeat();
         StartCoroutine(DeathRoutine());
         Destroy(gameObject, corpseLifetime);
     }
 
-    IEnumerator DeathRoutine()
+        /// Drops chunks of meat on the ground around the corpse (walk over them to pick them up).
+    void DropMeat()
+    {
+        if (meatChunks <= 0 || meatPerChunk <= 0 || string.IsNullOrEmpty(meatItemId)) return;
+
+        for (int i = 0; i < meatChunks; i++)
+        {
+            Vector2 c = Random.insideUnitCircle * 1.4f;
+            Vector3 pos = transform.position + new Vector3(c.x, 0.15f, c.y);
+            MeatPickup.Spawn(pos, meatItemId, meatPerChunk);
+        }
+    }
+
+IEnumerator DeathRoutine()
     {
         // If you have a real model with a "Die" trigger in its Animator, use that.
         if (AnimatorHasParameter(dieTrigger, AnimatorControllerParameterType.Trigger))

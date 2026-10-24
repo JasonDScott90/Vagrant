@@ -8,13 +8,15 @@ public class ItemDef
     public readonly string displayName;
     public readonly int maxStack;
     public readonly Color color;   // placeholder icon colour until real icons exist
+    public readonly int hunger;    // hunger restored when eaten (0 = not edible)
 
-    public ItemDef(string id, string displayName, int maxStack, Color color)
+    public ItemDef(string id, string displayName, int maxStack, Color color, int hunger = 0)
     {
         this.id = id;
         this.displayName = displayName;
         this.maxStack = Mathf.Max(1, maxStack);
         this.color = color;
+        this.hunger = Mathf.Max(0, hunger);
     }
 }
 
@@ -33,6 +35,8 @@ public static class ItemDB
         Register(new ItemDef("low_grade_fuel", "Low Grade Fuel", 1000, new Color(0.85f, 0.55f, 0.15f)));
         Register(new ItemDef("sulfur", "Sulfur", 1000, new Color(0.85f, 0.75f, 0.20f)));
         Register(new ItemDef("charcoal", "Charcoal", 1000, new Color(0.25f, 0.22f, 0.20f)));        Register(new ItemDef("bullet", "Bullet", 1000, new Color(0.82f, 0.65f, 0.25f)));
+        Register(new ItemDef("raw_meat", "Raw Meat", 100, new Color(0.68f, 0.20f, 0.18f), 8));
+        Register(new ItemDef("cooked_meat", "Cooked Meat", 100, new Color(0.52f, 0.32f, 0.16f), 20));
     }
 
     static void Register(ItemDef def) { byId[def.id] = def; }

@@ -13,6 +13,9 @@ public class InventoryUI : MonoBehaviour
     public static InventoryUI Instance { get; private set; }
     public static bool IsOpen { get; private set; }
 
+    /// Index of the clicked/selected slot in the grid, or -1 when nothing is selected.
+    public static int SelectedSlotIndex { get { return Instance != null ? Instance.selected : -1; } }
+
     public float slotSize = 86f;
     public float slotGap = 8f;
 
@@ -26,6 +29,9 @@ public class InventoryUI : MonoBehaviour
     Image ghostIcon;
     Text ghostAmount;
     InventorySlot dragFrom;
+    int selected = -1;
+    InventorySlot hovered;
+    bool suppressClick;
 
     Font font;
     Sprite white;
@@ -37,6 +43,7 @@ public class InventoryUI : MonoBehaviour
 
     static readonly Color SlotNormal = new Color(0.16f, 0.15f, 0.13f, 0.95f);
     static readonly Color SlotHover = new Color(0.28f, 0.27f, 0.23f, 1f);
+    static readonly Color SlotSelected = new Color(0.22f, 0.42f, 0.60f, 1f);
 
     // ---------------------------------------------------------------- public API
 
@@ -71,7 +78,11 @@ public class InventoryUI : MonoBehaviour
     public static void Close()
     {
         IsOpen = false;
-        if (Instance != null) Instance.gameObject.SetActive(false);
+        if (Instance != null)
+        {
+            Instance.selected = -1;
+            Instance.gameObject.SetActive(false);
+        }
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
     }
@@ -122,7 +133,7 @@ public class InventoryUI : MonoBehaviour
         grid = NewRect("Grid", panel, new Vector2(0f, -18f), Vector2.zero);
 
         Text hint = NewText("Hint", panel, new Vector2(0f, -282f), new Vector2(640f, 30f), 20);
-        hint.text = "[TAB] / [ESC] Close      -      Drag stacks to sort your items";
+        hint.text = "[TAB] / [ESC] Close      -      Click an item to select it, [F] to eat      -      Drag stacks to sort";
         hint.color = new Color(1f, 1f, 1f, 0.7f);
 
         CreateGhost();
@@ -231,11 +242,26 @@ public class InventoryUI : MonoBehaviour
 
     public void OnSlotHover(InventorySlot slot, bool enter)
     {
-        if (slot.bg != null) slot.bg.color = enter ? SlotHover : SlotNormal;
+        hovered = enter ? slot : (hovered == slot ? null : hovered);
+        UpdateSlotVisual(slot);
+    }
+
+    public void OnSlotDown(InventorySlot slot)
+    {
+        suppressClick = false;   // a fresh press: the click that follows is a real click
+    }
+
+    /// Click selects a slot; clicking the selected slot again deselects it.
+    public void OnSlotClick(InventorySlot slot)
+    {
+        if (suppressClick) return;   // this is the click at the end of a drag, not a selection
+        selected = (selected == slot.index) ? -1 : slot.index;
+        RefreshSlotVisuals();
     }
 
     public void OnSlotBeginDrag(InventorySlot slot, PointerEventData e)
     {
+        suppressClick = true;   // don't select when the drag ends with a click
         if (e.button != PointerEventData.InputButton.Left) return;
 
         ItemStack stack = (playerInv != null && slot.index < playerInv.SlotCount)
@@ -306,6 +332,19 @@ public class InventoryUI : MonoBehaviour
             slots[i].label.text = empty ? string.Empty : def.displayName;
         }
     }
+    void RefreshSlotVisuals()
+    {
+        if (slots == null) return;
+        for (int i = 0; i < slots.Length; i++) UpdateSlotVisual(slots[i]);
+    }
+
+    void UpdateSlotVisual(InventorySlot slot)
+    {
+        if (slot == null || slot.bg == null) return;
+        if (slot.index == selected) slot.bg.color = SlotSelected;
+        else if (slot == hovered) slot.bg.color = SlotHover;
+        else slot.bg.color = SlotNormal;
+    }
 
     // ---------------------------------------------------------------- helpers
 
@@ -362,6 +401,7 @@ public class InventoryUI : MonoBehaviour
 /// One slot in the inventory screen. Created at runtime by InventoryUI.
 public class InventorySlot : MonoBehaviour,
     IPointerEnterHandler, IPointerExitHandler,
+    IPointerDownHandler, IPointerClickHandler,
     IBeginDragHandler, IDragHandler, IEndDragHandler
 {
     public InventoryUI ui;
@@ -373,6 +413,8 @@ public class InventorySlot : MonoBehaviour,
 
     public void OnPointerEnter(PointerEventData e) { if (ui != null) ui.OnSlotHover(this, true); }
     public void OnPointerExit(PointerEventData e) { if (ui != null) ui.OnSlotHover(this, false); }
+    public void OnPointerDown(PointerEventData e) { if (ui != null) ui.OnSlotDown(this); }
+    public void OnPointerClick(PointerEventData e) { if (ui != null) ui.OnSlotClick(this); }
     public void OnBeginDrag(PointerEventData e) { if (ui != null) ui.OnSlotBeginDrag(this, e); }
     public void OnDrag(PointerEventData e) { if (ui != null) ui.OnSlotDrag(e); }
     public void OnEndDrag(PointerEventData e) { if (ui != null) ui.OnSlotEndDrag(this, e); }
